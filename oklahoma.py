@@ -7,7 +7,6 @@ import subprocess
 import sys
 import yaml
 
-commands = [ 'fetch', 'pull', 'push' ]
 
 def check_exec(cmd, workdir):
     """
@@ -121,7 +120,12 @@ def clone_or_update(config):
     """
     Clone (or otherwise update) each repo, restoring it to a fresh state.
 
-    Return a list of tuples in the form of (source_dir, build_dir) for each repo.
+    Return a list of dicts containing
+     - source_dir
+     - build_dir
+     - repo_name
+     - branch_name
+     - commit_sha
     """
     directories = []
     for entity in get_all_entities(config):
@@ -208,7 +212,14 @@ def clone_or_update(config):
                 if os.path.exists(build_dir):
                     shutil.rmtree(build_dir)
                 os.makedirs(build_dir)
-                directories.append((path, build_dir))
+
+                directories.append({
+                    "source_dir": path,
+                    "build_dir": build_dir,
+                    "repo_name": repo['full_name'],
+                    "branch_name": branch['name'],
+                    "commit_sha": branch['commit']['sha'],
+                })
     return directories
 
 
@@ -264,17 +275,39 @@ def remove_orphans(config):
         path.pop() # pop entity type
 
 
-def main(command):
-    config = yaml.load( open( "config.yaml", "r" ) )
+def run_oak(oak, params):
+    """
+    Call oak with the given parameters.
+    """
+    check_exec(
+        [
+            oak,
+            "-i", params['source_dir'],
+            "-o", params['build_dir'],
+            "-r", params['repo_name'],
+            "-b", params['branch_name'],
+            "-c", params['commit_sha'],
+        ],
+        '.'
+    )
+
+
+def main(oak, config_file):
+    config = yaml.load( open( config_file, "r" ) )
     if not os.path.exists("orgs/"):
         os.makedirs("orgs/")
     if not os.path.exists("users/"):
         os.makedirs("users/")
+
     remove_orphans(config)
-    clone_or_update(config)
+    branches = clone_or_update(config)
+
+    for b in branches:
+        run_oak(oak, b)
 
 if __name__ == "__main__":
-    command = None
-    if len(sys.argv) >= 2 and sys.argv[1] in commands:
-        command = sys.argv[1]
-    main(command)
+    usage = sys.argv[0] + " <oak> <config>"
+    if len(sys.argv) != 3:
+        print usage
+    else:
+        main(sys.argv[1], sys.argv[2])
