@@ -88,7 +88,20 @@ def get_repo_branches(config, repo, pred=lambda x: True):
         verify=config['ca']
     )
     branches.raise_for_status()
-    return [branch for branch in branches.json() if pred(branch)]
+    branches = branches.json()
+    for b in branches:
+        b.update({'type': "branch"})
+    tags = requests.get(
+        config['server'] + "/api/v3/repos/" + repo['full_name'] + "/tags",
+        params={"access_token": config['token']},
+        verify=config['ca']
+    )
+    tags.raise_for_status()
+    tags = tags.json()
+    for t in tags:
+        t.update({'type': "tag"})
+    combined = branches + tags
+    return [branch for branch in combined if pred(branch)]
 
 
 def get_branch_path(repo, branch, modifier=""):
@@ -138,19 +151,39 @@ def clone_or_update(config):
                         [
                             "git",
                             "fetch",
-                            "origin",
+                            "--all",
                         ],
                         path
                     )
                     update_success &= check_exec(
                         [
                             "git",
-                            "reset",
-                            "--hard",
-                            "origin/" + branch['name'],
+                            "fetch",
+                            "--tags",
                         ],
                         path
                     )
+                    # you can't reset a tag, so tags have to be handled differently
+                    if branch['type'] == "branch":
+                        update_success &= check_exec(
+                            [
+                                "git",
+                                "reset",
+                                "--hard",
+                                "origin/" + branch['name'],
+                            ],
+                            path
+                        )
+                    else:
+                        update_success &= check_exec(
+                            [
+                                "git",
+                                "checkout",
+                                branch['name'],
+                            ],
+                            path
+                        )
+
                     if not update_success:
                         # update failed, delete repo and clone again
                         print "\033[0;32m" + "Updating repo at " + path + " failed. Cloning instead." + "\033[0;m"
