@@ -116,6 +116,25 @@ def get_repo_clone_url(config, repo):
     return clone_url.replace( "://", "://" + config['token'] + "@" )
 
 
+def get_repo_filter(config):
+    """
+    Return a callable that satisfies the get_entity_repos(...) predicate.
+    """
+    whitelist = config['whitelist_repos'] or []
+    blacklist = config['blacklist_repos'] or []
+    whitelisting = len(whitelist) > 0
+    def repo_filter(repo):
+        """
+        If whitelist is not empty, allow only whitelisted repos.
+        If whitelist is empty, exclude any blacklisted repos.
+        """
+        if whitelisting:
+            return repo['full_name'] in whitelist
+        else:
+            return repo['full_name'] not in blacklist
+    return repo_filter
+
+
 def clone_or_update(config):
     """
     Clone (or otherwise update) each repo, restoring it to a fresh state.
@@ -131,7 +150,7 @@ def clone_or_update(config):
     for entity in get_all_entities(config):
         entitytype = get_entity_type(entity)
         # filter out repos that are in the list of repos to skip
-        for repo in get_entity_repos(config, entity, lambda x: x['full_name'] not in config['skip_repos']):
+        for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
                 path = get_branch_path(repo, branch, "src")
@@ -250,7 +269,9 @@ def remove_orphans(config):
             for repo_name in os.listdir(join_path(path)):
                 path.append(repo_name)
                 print "\033[0;34m" + "Checking repo: " + join_path(path) + "\033[0;m"
-                matches = get_entity_repos(config, entity, lambda x: x['full_name'] == entity_name + "/" + repo_name)
+                global_repo_filter = get_repo_filter(config)
+                our_repo_filter = lambda x: (x['full_name'] == entity_name + "/" + repo_name) and global_repo_filter(x)
+                matches = get_entity_repos(config, entity, our_repo_filter)
                 if len(matches) != 1:
                     print "\033[0;33m" + "Repo " + repo_name + " is orphan, deleting." + "\033[0;m"
                     shutil.rmtree(join_path(path))
