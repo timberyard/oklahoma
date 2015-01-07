@@ -206,7 +206,7 @@ def clone_or_update(config):
                     )
                     if not clone_success:
                         # TODO report this repo as failed
-                        return
+                        continue
 
                 build_dir = get_branch_path(repo, branch, "build")
                 if os.path.exists(build_dir):
