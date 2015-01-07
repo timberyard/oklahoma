@@ -26,18 +26,13 @@ def check_exec(cmd, workdir):
     os.chdir(oldcwd)
     sys.stdout.write("\033[0;m")
     sys.stdout.flush()
-    print "\033[0;33m" + "result: " + str(res) + "\033[0;m"
     if( res != 0 ):
+        print "\033[0;33m" + "Could not execute " + cmdstr + "\033[0;m"
+        print "\033[0;33m" + "Result: " + str(res) + "\033[0;m"
         sys.stdout.write("\033[0;33m")
         sys.stdout.flush()
-        print "could not exec: " + cmdstr
-        inp = raw_input("retry? ")
         sys.stdout.write("\033[0;m")
-        sys.stdout.flush()
-        if inp == "yes" or inp == "y" or inp == "":
-            return check_exec(cmd, workdir)
-        else:
-            return False
+        return False
     else:
         return True
 
