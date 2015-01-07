@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
-import yaml
-import requests
-import sys
 import os
+import requests
+import shutil
 import subprocess
+import sys
+import yaml
 
 commands = [ 'fetch', 'pull', 'push' ]
 
@@ -87,15 +88,17 @@ def get_repo_branches(config, repo, pred=lambda x: True):
         verify=config['ca']
     )
     branches.raise_for_status()
-    return branches.json()
+    return [branch for branch in branches.json() if pred(branch)]
 
 
-def get_branch_path(repo, branch):
+def get_branch_path(repo, branch, modifier=""):
     """
     Return a path (properly encoded for the system environment) where the given
     branch of the given repo should go.
     """
-    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name']
+    if len(modifier) != 0:
+        modifier = "/" + modifier
+    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name'].replace("/","_") + modifier
 
 
 def get_repo_clone_url(config, repo):
@@ -106,18 +109,53 @@ def get_repo_clone_url(config, repo):
     return clone_url.replace( "://", "://" + config['token'] + "@" )
 
 
-def run_command(config, command):
+def clone_or_update(config):
     """
-    Run command in each repository.
-    If the repo does not exist, it will be cloned first.
+    Clone (or otherwise update) each repo, restoring it to a fresh state.
+
+    Return a list of tuples in the form of (source_dir, build_dir) for each repo.
     """
+    directories = []
     for entity in get_all_entities(config):
         entitytype = get_entity_type(entity)
         # filter out repos that are in the list of repos to skip
         for repo in get_entity_repos(config, entity, lambda x: x['full_name'] not in config['skip_repos']):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
-                path = get_branch_path(repo, branch)
+                path = get_branch_path(repo, branch, "src")
+                if os.path.exists(path + "/.git"):
+                    # already cloned, perform update
+                    print "\033[0;32m" + "Repo at " + path + " already exists, updating." + "\033[0;m"
+                    update_success = check_exec(
+                        [
+                            "git",
+                            "clean",
+                            "-fxd"
+                        ],
+                        path
+                    )
+                    update_success &= check_exec(
+                        [
+                            "git",
+                            "fetch",
+                            "origin",
+                        ],
+                        path
+                    )
+                    update_success &= check_exec(
+                        [
+                            "git",
+                            "reset",
+                            "--hard",
+                            "origin/" + branch['name'],
+                        ],
+                        path
+                    )
+                    if not update_success:
+                        # update failed, delete repo and clone again
+                        print "\033[0;32m" + "Updating repo at " + path + " failed. Cloning instead." + "\033[0;m"
+                        shutil.rmtree(path)
+
                 if not os.path.exists(path + "/.git"):
                     os.makedirs(path)
                     clone_success = check_exec(
@@ -135,72 +173,77 @@ def run_command(config, command):
                         '.'
                     )
                     if not clone_success:
-                        inp = raw_input("continue? ")
-                        if inp != "yes" and inp != "y" and inp != "":
-                            return
-                else:
-                    print "\033[0;32m" + "Repo at " + path + " already exists, not cloning." + "\033[0;m"
+                        # TODO report this repo as failed
+                        return
 
-                if not command is None:
-                    if check_exec(['git', command, '-v'], path) == False:
-                        inp = raw_input("reset? ")
-                        if inp == "yes" or inp == "y" or inp == "":
-                            check_exec(['git', 'reset', '--hard', 'origin/' + branch['name']], path)
-                            check_exec(['git', command, '-v'], path)
-                        else:
-                            inp = raw_input("continue? ")
-                            if inp != "yes" and inp != "y" and inp != "":
-                                return
+                build_dir = get_branch_path(repo, branch, "build")
+                if os.path.exists(build_dir):
+                    shutil.rmtree(build_dir)
+                os.makedirs(build_dir)
+                directories.append((path, build_dir))
+    return directories
 
 
-def check_orphans(config):
-    print "\033[0;32m" + "finding orphans..." + "\033[0;m"
-    oc = 0
+def remove_orphans(config):
+    """
+    Find and delete repos that are checked-out locally but no longer exist on origin.
+    """
+    print "\033[0;32m" + "Finding orphans..." + "\033[0;m"
+    path = []
+    join_path = lambda path: "/".join(path)
     for entitytype in ["org", "user"]:
-        for entity in os.listdir(entitytype + "s/"):
-            entityreq = requests.get( config['server'] + "/api/v3/users/" + entity, params={"access_token": config['token']}, verify=config['ca'] )
-            entityorphan = True if entityreq.status_code == 404 else False
-            if entityorphan == False:
-                entityreq.raise_for_status()
-                entitydata = entityreq.json()
-                entityorphan = True if ((entitydata['type'] == "Organization" and entitytype == "user") or (entitydata['type'] == "User" and entitytype == "org")) else False
-                if entityorphan == False:
-                    for repo in os.listdir(entitytype + "s/" + entity + "/"):
-                        reporeq = requests.get( config['server'] + "/api/v3/repos/" + entity + "/" + repo, params={"access_token": config['token']}, verify=config['ca'] )
-                        if reporeq.status_code != 404:
-                            reporeq.raise_for_status()
-                            for branch in os.listdir(entitytype + "s/" + entity + "/" + repo + "/"):
-                                if branch == "feature" or branch == "release":
-                                    for subbranch in os.listdir(entitytype + "s/" + entity + "/" + repo + "/" + branch + "/"):
-                                        subbranchreq = requests.get( config['server'] + "/api/v3/repos/" + entity + "/" + repo + "/branches/" + branch + "/" + subbranch, params={"access_token": config['token']}, verify=config['ca'] )
-                                        if subbranchreq.status_code != 404:
-                                            subbranchreq.raise_for_status()
-                                        else:
-                                            print "\033[0;33m" + "orphan detected: branch '" + branch + "/" + subbranch + "' of repo '" + repo + "' of " + entitytype + " '" + entity + "'\033[0;m"
-                                            oc += 1
-                                else:
-                                    branchreq = requests.get( config['server'] + "/api/v3/repos/" + entity + "/" + repo + "/branches/" + branch, params={"access_token": config['token']}, verify=config['ca'] )
-                                    if branchreq.status_code != 404:
-                                        branchreq.raise_for_status()
-                                    else:
-                                        print "\033[0;33m" + "orphan detected: branch '" + branch + "' of repo '" + repo + "' of " + entitytype + " '" + entity + "'\033[0;m"
-                                        oc += 1
-                        else:
-                            print "\033[0;33m" + "orphan detected: repo '" + repo + "' of " + entitytype + " '" + entity + "'\033[0;m"
-                            oc += 1
-            if entityorphan == True:
-                print "\033[0;33m" + "orphan detected: " + entitytype + " '" + entity + "'\033[0;m"
-                oc += 1
-    print "\033[0;32m" + str(oc) + " orphans found" + "\033[0;m"
+        path.append(entitytype + "s")
+        print "\033[0;34m" + "Checking entity type: " + entitytype + "\033[0;m"
+        for entity_name in os.listdir(join_path(path)):
+            path.append(entity_name)
+            print "\033[0;34m" + "Checking entity: " + join_path(path) + "\033[0;m"
+            
+            # check that entity exists and that type matches
+            matches = get_all_entities(config, lambda x: (x['login'] == entity_name) and (get_entity_type(x) == entitytype))
+            if len(matches) != 1:
+                print "\033[0;33m" + "Entity " + entity_name + " is orphan, deleting." + "\033[0;m"
+                shutil.rmtree(join_path(path))
+                path.pop()
+                continue
+
+            # check that each repo exists
+            entity = matches[0]
+            for repo_name in os.listdir(join_path(path)):
+                path.append(repo_name)
+                print "\033[0;34m" + "Checking repo: " + join_path(path) + "\033[0;m"
+                matches = get_entity_repos(config, entity, lambda x: x['full_name'] == entity_name + "/" + repo_name)
+                if len(matches) != 1:
+                    print "\033[0;33m" + "Repo " + repo_name + " is orphan, deleting." + "\033[0;m"
+                    shutil.rmtree(join_path(path))
+                    path.pop()
+                    continue
+                
+                # check that each branch exits
+                repo = matches[0]
+                for branch_name in os.listdir(join_path(path)):
+                    path.append(branch_name)
+                    print "\033[0;34m" + "Checking branch: " + join_path(path) + "\033[0;m"
+                    matches = get_repo_branches(config, repo, lambda x: get_branch_path(repo, x) == join_path(path))
+                    if len(matches) != 1:
+                        print "\033[0;33m" + "Branch " + branch_name + " is orphan, deleting" + "\033[0;m"
+                        shutil.rmtree(join_path(path))
+                        path.pop()
+                        continue
+
+                    path.pop() # pop branch name
+                path.pop() # pop repo name
+            path.pop() # pop entity name
+        path.pop() # pop entity type
+
 
 def main(command):
-    config = yaml.load( open( "ghc.conf", "r" ) )
+    config = yaml.load( open( "config.yaml", "r" ) )
     if not os.path.exists("orgs/"):
         os.makedirs("orgs/")
     if not os.path.exists("users/"):
         os.makedirs("users/")
-    run_command(config, command)
-    check_orphans(config)
+    clone_or_update(config)
+    remove_orphans(config)
 
 if __name__ == "__main__":
     command = None
