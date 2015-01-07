@@ -153,7 +153,7 @@ def clone_or_update(config):
         for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
-                path = get_branch_path(repo, branch, "src")
+                path = config['output_dir'] + "/" + get_branch_path(repo, branch, "src")
                 if os.path.exists(path + "/.git"):
                     # already cloned, perform update
                     print "\033[0;32m" + "Repo at " + path + " already exists, updating." + "\033[0;m"
@@ -227,7 +227,7 @@ def clone_or_update(config):
                         # TODO report this repo as failed
                         continue
 
-                build_dir = get_branch_path(repo, branch, "build")
+                build_dir = config['output_dir'] + "/" + get_branch_path(repo, branch, "build")
                 if os.path.exists(build_dir):
                     shutil.rmtree(build_dir)
                 os.makedirs(build_dir)
@@ -247,7 +247,7 @@ def remove_orphans(config):
     Find and delete repos that are checked-out locally but no longer exist on origin.
     """
     print "\033[0;32m" + "Finding orphans..." + "\033[0;m"
-    path = []
+    path = [config['output_dir']]
     join_path = lambda path: "/".join(path)
     for entitytype in ["org", "user"]:
         path.append(entitytype + "s")
@@ -283,7 +283,8 @@ def remove_orphans(config):
                 for branch_name in os.listdir(join_path(path)):
                     path.append(branch_name)
                     print "\033[0;34m" + "Checking branch: " + join_path(path) + "\033[0;m"
-                    matches = get_repo_branches(config, repo, lambda x: get_branch_path(repo, x) == join_path(path))
+                    branch_filter = lambda x: config['output_dir'] + "/" + get_branch_path(repo, x) == join_path(path)
+                    matches = get_repo_branches(config, repo, branch_filter)
                     if len(matches) != 1:
                         print "\033[0;33m" + "Branch " + branch_name + " is orphan, deleting" + "\033[0;m"
                         shutil.rmtree(join_path(path))
@@ -315,10 +316,13 @@ def run_oak(oak, params):
 
 def main(oak, config_file):
     config = yaml.load( open( config_file, "r" ) )
-    if not os.path.exists("orgs/"):
-        os.makedirs("orgs/")
-    if not os.path.exists("users/"):
-        os.makedirs("users/")
+    out_dir = config['output_dir']
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+    if not os.path.exists(out_dir + "/orgs/"):
+        os.makedirs(out_dir + "/orgs/")
+    if not os.path.exists(out_dir + "/users/"):
+        os.makedirs(out_dir + "/users/")
 
     remove_orphans(config)
     branches = clone_or_update(config)

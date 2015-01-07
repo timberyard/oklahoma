@@ -27,6 +27,7 @@ blacklist_repos:
     - everbase/builds
 whitelist_repos:
     - foo/bar
+output_dir: ./repos
 ```
 
 Access tokens can be generated in your GitHub account settings
