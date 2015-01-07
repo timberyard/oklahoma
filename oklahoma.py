@@ -26,18 +26,13 @@ def check_exec(cmd, workdir):
     os.chdir(oldcwd)
     sys.stdout.write("\033[0;m")
     sys.stdout.flush()
-    print "\033[0;33m" + "result: " + str(res) + "\033[0;m"
     if( res != 0 ):
+        print "\033[0;33m" + "Could not execute " + cmdstr + "\033[0;m"
+        print "\033[0;33m" + "Result: " + str(res) + "\033[0;m"
         sys.stdout.write("\033[0;33m")
         sys.stdout.flush()
-        print "could not exec: " + cmdstr
-        inp = raw_input("retry? ")
         sys.stdout.write("\033[0;m")
-        sys.stdout.flush()
-        if inp == "yes" or inp == "y" or inp == "":
-            return check_exec(cmd, workdir)
-        else:
-            return False
+        return False
     else:
         return True
 
@@ -88,7 +83,20 @@ def get_repo_branches(config, repo, pred=lambda x: True):
         verify=config['ca']
     )
     branches.raise_for_status()
-    return [branch for branch in branches.json() if pred(branch)]
+    branches = branches.json()
+    for b in branches:
+        b.update({'type': "branch"})
+    tags = requests.get(
+        config['server'] + "/api/v3/repos/" + repo['full_name'] + "/tags",
+        params={"access_token": config['token']},
+        verify=config['ca']
+    )
+    tags.raise_for_status()
+    tags = tags.json()
+    for t in tags:
+        t.update({'type': "tag"})
+    combined = branches + tags
+    return [branch for branch in combined if pred(branch)]
 
 
 def get_branch_path(repo, branch, modifier=""):
@@ -138,19 +146,39 @@ def clone_or_update(config):
                         [
                             "git",
                             "fetch",
-                            "origin",
+                            "--all",
                         ],
                         path
                     )
                     update_success &= check_exec(
                         [
                             "git",
-                            "reset",
-                            "--hard",
-                            "origin/" + branch['name'],
+                            "fetch",
+                            "--tags",
                         ],
                         path
                     )
+                    # you can't reset a tag, so tags have to be handled differently
+                    if branch['type'] == "branch":
+                        update_success &= check_exec(
+                            [
+                                "git",
+                                "reset",
+                                "--hard",
+                                "origin/" + branch['name'],
+                            ],
+                            path
+                        )
+                    else:
+                        update_success &= check_exec(
+                            [
+                                "git",
+                                "checkout",
+                                branch['name'],
+                            ],
+                            path
+                        )
+
                     if not update_success:
                         # update failed, delete repo and clone again
                         print "\033[0;32m" + "Updating repo at " + path + " failed. Cloning instead." + "\033[0;m"
@@ -242,8 +270,8 @@ def main(command):
         os.makedirs("orgs/")
     if not os.path.exists("users/"):
         os.makedirs("users/")
-    clone_or_update(config)
     remove_orphans(config)
+    clone_or_update(config)
 
 if __name__ == "__main__":
     command = None
