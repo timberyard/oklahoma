@@ -22,10 +22,21 @@ server: https://chicago.everbase.net
 ca: /path/to/everbase.net.pem
 user: username
 token: OAUTH_TOKEN
-skip_repos:
+blacklist_repos:
     - knowledge/books
     - everbase/builds
+whitelist_repos:
+    - foo/bar
 ```
 
 Access tokens can be generated in your GitHub account settings
 under Applications. The token must grant access to "repos" and "private repos".
+
+### Whitelisting and Blacklisting
+
+Repos can be white- and blacklisted, as shown above in the sample config.
+Full names (IE username/repo_name) must be used.
+
+If the whitelist is not empty, the blacklist is ignored.
+
+Both lists must be given in the config but may be empty.
