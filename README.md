@@ -3,7 +3,7 @@ oklahoma
 
 Framework to check out and build branches using Oak
 
-# Installation
+### Installation & Use
 
 ```
 ./env_setup.sh
@@ -15,7 +15,7 @@ deactivate
 
 The repos will be checked out into subdirectoreis of the current working dir.
 
-# $PWD/config.yaml
+### $PWD/config.yaml
 
 ```
 server: https://chicago.everbase.net
