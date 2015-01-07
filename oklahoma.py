@@ -242,8 +242,8 @@ def main(command):
         os.makedirs("orgs/")
     if not os.path.exists("users/"):
         os.makedirs("users/")
-    clone_or_update(config)
     remove_orphans(config)
+    clone_or_update(config)
 
 if __name__ == "__main__":
     command = None
