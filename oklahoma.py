@@ -199,7 +199,7 @@ def find_json_file(path):
     files.sort()
     for f in files:
         if f.endswith(".json"):
-            return f
+            return path + "/" + f
     return None
 
 
@@ -375,12 +375,13 @@ def build_and_publish_status(config, oak, branch):
             build_success = check_exec(
                 [
                     oak,
-                    "-i", branch.source_dir,
-                    "-o", branch.build_dir,
+                    "-i", os.path.abspath(branch.source_dir),
+                    "-o", os.path.abspath(branch.build_dir),
                     "-r", branch.repo_name,
                     "-b", branch.branch_name,
                     "-c", branch.commit_sha,
-                    build_conf
+                    "-O", config['report_file'],
+                    build_conf,
                 ],
                 '.'
             )

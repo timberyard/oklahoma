@@ -28,6 +28,7 @@ blacklist_repos:
 whitelist_repos:
     - foo/bar
 output_dir: ./repos
+report_file: ./report.html
 reporting_context: ci_linux
 publish_status: !!bool False
 skip_if_last_success: !!bool True
