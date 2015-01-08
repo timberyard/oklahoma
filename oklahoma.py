@@ -190,7 +190,11 @@ def get_branch_build_path(config, repo, branch):
     )
     commit.raise_for_status()
     commit = commit.json()
-    return get_branch_base_path(repo, branch) + "/builds/" + commit['author']['date'] + "_" + commit['sha']
+    sha = commit['sha']
+    timestamp = commit['author']['date']
+    # some parts of the build can't handle colons in the path, apparently
+    timestamp = timestamp.replace(":", "-")
+    return get_branch_base_path(repo, branch) + "/builds/" + timestamp + "_" + sha
 
 def get_repo_clone_url(config, repo):
     """
