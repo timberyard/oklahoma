@@ -372,17 +372,21 @@ def build_and_publish_status(config, oak, branch):
         # find json config
         build_conf = find_json_file(branch.source_dir)
         if build_conf:
-            build_success = check_exec(
-                [
-                    oak,
-                    "-i", os.path.abspath(branch.source_dir),
-                    "-o", os.path.abspath(branch.build_dir),
-                    "-r", branch.repo_name,
-                    "-b", branch.branch_name,
-                    "-c", branch.commit_sha,
+            oak_args = [
+                oak,
+                "-i", os.path.abspath(branch.source_dir),
+                "-o", os.path.abspath(branch.build_dir),
+                "-r", branch.repo_name,
+                "-b", branch.branch_name,
+                "-c", branch.commit_sha,
+            ]
+            if 'report_file' in config:
+                oak_args.extend([
                     "-O", config['report_file'],
-                    build_conf,
-                ],
+                ])
+            oak_args.append(build_conf)
+            build_success = check_exec(
+                oak_args,
                 '.'
             )
         else:
