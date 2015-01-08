@@ -38,7 +38,7 @@ output_dir: ./repos
 report_file: ./report.html
 reporting_context: ci_linux
 publish_status: !!bool False
-skip_if_last_success: !!bool True
+force_rebuild: !!bool False
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -61,8 +61,8 @@ and mac build systems, or ci builders, security checkers, style checkers, etc.
 
 If ``publish_status`` is set to ``False``, the build status will not be pushed to GitHub.
 
-If ``skip_if_last_success`` is ``True``, a branch will not be build if the
-last reported build status for that branch was success.
+If ``force_rebuild`` is ``True``, a branch will be built even if the
+there is already a build present for this branch. The old build will be discarded.
 
 If ``report_file`` is set, a report will be generated in the build directory
 with the given file name.

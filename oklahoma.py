@@ -178,11 +178,19 @@ def get_branch_source_path(repo, branch):
     return get_branch_base_path(repo, branch) + "/src"
 
 
-def get_branch_build_path(repo, branch):
+def get_branch_build_path(config, repo, branch):
     """
     Return the path where the branch should be built.
     """
-    return get_branch_source_path(repo, branch) + "/builds/" + branch['commit']['author']['date'] + "_" + branch['commit']['sha']
+    # get detailed commit info
+    commit = requests.get(
+        config['server'] + "/api/v3/repos/" + repo['full_name'] + "/git/commits/" + branch['commit']['sha'],
+        params={"access_token": config['token']},
+        verify=config['ca']
+    )
+    commit.raise_for_status()
+    commit = commit.json()
+    return get_branch_base_path(repo, branch) + "/builds/" + commit['author']['date'] + "_" + commit['sha']
 
 def get_repo_clone_url(config, repo):
     """
@@ -236,7 +244,7 @@ def clone_or_update(config):
         for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
-                path = config['output_dir'] + "/" + get_branch_source_path(repo, branch, "src")
+                path = config['output_dir'] + "/" + get_branch_source_path(repo, branch)
                 if os.path.exists(path + "/.git"):
                     # already cloned, perform update
                     print "\033[0;32m" + "Repo at " + path + " already exists, updating." + "\033[0;m"
@@ -307,11 +315,10 @@ def clone_or_update(config):
                         '.'
                     )
                     if not clone_success:
-                        # TODO report this repo as failed
                         print "\033[0;31m" + "Failed to clone repo " + repo['full_name'] + " branch " + branch['name'] + "\033[0;m"
                         continue
 
-                build_dir = config['output_dir'] + "/" + get_branch_build_path(repo, branch, "build")
+                build_dir = config['output_dir'] + "/" + get_branch_build_path(config, repo, branch)
                 this_branch = Branch()
                 this_branch.update({
                     "source_dir": path,
@@ -327,13 +334,23 @@ def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
     """
-    oak_status = -1
-    if (branch.get_status(config) != BranchStatus.SUCCESS) or not config['skip_if_last_success']:
-        print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-        branch.set_status(config, BranchStatus.PENDING)
+    if os.path.exists(branch.build_dir) and not config['force_rebuild']:
+        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "already exists. Skipping." + "\033[0;m"
+        return
+    else:
+        print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "\033[0;m"
         # find json config
         build_conf = find_json_file(branch.source_dir)
-        if build_conf:
+        if build_conf is None:
+            print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
+            return
+        else:
+            # if we get here we're forceing the rebuild, so throw away the old build
+            if os.path.exists(branch.build_dir):
+                shutil.rmtree(branch.build_dir)
+            os.makedirs(branch.build_dir)
+            oak_status = -1
+            branch.set_status(config, BranchStatus.PENDING)
             oak_args = [
                 oak,
                 "-i", os.path.abspath(branch.source_dir),
@@ -351,24 +368,20 @@ def build_and_publish_status(config, oak, branch):
                 oak_args,
                 '.'
             )
-        else:
-            print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
-            return
-
-        if oak_status == 0:
-            print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.SUCCESS)
-        elif oak_status == 1:
-            print "\033[0;33m" + "Error with build tool while building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.ERROR)
-        elif oak_status == 2:
-            print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.FAILURE)
-        else:
-            print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
-            branch.set_status(config, BranchStatus.ERROR)
-    else:
-        print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
+            if oak_status == 0:
+                print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.SUCCESS)
+            elif oak_status == 1:
+                print "\033[0;33m" + "Error with build tool while building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.ERROR)
+                shutil.rmtree(branch.build_dir)
+            elif oak_status == 2:
+                print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.FAILURE)
+            else:
+                print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
+                branch.set_status(config, BranchStatus.ERROR)
+                shutil.rmtree(branch.build_dir)
 
 
 def main(oak, config_file):
