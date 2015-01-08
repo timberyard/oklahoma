@@ -1,11 +1,65 @@
 #!/usr/bin/env python
 
+import json
 import os
 import requests
 import shutil
 import subprocess
 import sys
 import yaml
+
+
+class BranchStatus(object):
+    PENDING = "pending"
+    SUCCESS = "success"
+    ERROR = "error"
+    FAILURE = "failure"
+
+
+class Branch(object):
+    """
+    Container containing info about a branch that has been checked
+    out and is locally up-to-date
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.source_dir = ""
+        self.build_dur = ""
+        self.repo_name = ""
+        self.branch_name = ""
+        self.commit_sha = ""
+        self.update(kwargs)
+
+    def update(self, update_dict):
+        for k, v in update_dict.items():
+            setattr(self, k, v)
+    
+    def get_status(self, config):
+        """
+        Return the most recent status that matches config['reporting_context']
+        """
+        status = requests.get(
+            config['server'] + "/api/v3/repos/" + self.repo_name + "/commits/" + self.commit_sha + "/statuses",
+            params={"access_token": config['token']},
+            verify=config['ca']
+        )
+        status.raise_for_status()
+        for s in status.json():
+            if s['context'] == config['reporting_context']:
+                return s['state']
+        return BranchStatus.ERROR
+
+    def set_status(self, config, status):
+        r = requests.post(
+            config['server'] + "/api/v3/repos/" + self.repo_name + "/statuses/" + self.commit_sha,
+            params={"access_token": config['token']},
+            data=json.dumps({
+                "state": status,
+                "context": config['reporting_context'],
+            }),
+            verify=config['ca']
+        )
+        r.raise_for_status()
 
 
 def check_exec(cmd, workdir):
@@ -139,14 +193,9 @@ def clone_or_update(config):
     """
     Clone (or otherwise update) each repo, restoring it to a fresh state.
 
-    Return a list of dicts containing
-     - source_dir
-     - build_dir
-     - repo_name
-     - branch_name
-     - commit_sha
+    Return a list of Branch objects.
     """
-    directories = []
+    available_branches = []
     for entity in get_all_entities(config):
         entitytype = get_entity_type(entity)
         # filter out repos that are in the list of repos to skip
@@ -231,15 +280,17 @@ def clone_or_update(config):
                 if os.path.exists(build_dir):
                     shutil.rmtree(build_dir)
                 os.makedirs(build_dir)
-
-                directories.append({
+                
+                this_branch = Branch()
+                this_branch.update({
                     "source_dir": path,
                     "build_dir": build_dir,
                     "repo_name": repo['full_name'],
                     "branch_name": branch['name'],
                     "commit_sha": branch['commit']['sha'],
                 })
-    return directories
+                available_branches.append(this_branch)
+    return available_branches
 
 
 def remove_orphans(config):
@@ -297,21 +348,30 @@ def remove_orphans(config):
         path.pop() # pop entity type
 
 
-def run_oak(oak, params):
+def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
     """
-    check_exec(
-        [
-            oak,
-            "-i", params['source_dir'],
-            "-o", params['build_dir'],
-            "-r", params['repo_name'],
-            "-b", params['branch_name'],
-            "-c", params['commit_sha'],
-        ],
-        '.'
-    )
+    print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+    if branch.get_status(config) != BranchStatus.SUCCESS:
+        branch.set_status(config, BranchStatus.PENDING)
+        build_success = check_exec(
+            [
+                oak,
+                "-i", branch.source_dir,
+                "-o", branch.build_dir,
+                "-r", branch.repo_name,
+                "-b", branch.branch_name,
+                "-c", branch.commit_sha,
+            ],
+            '.'
+        )
+        if build_success:
+            branch.set_status(config, BranchStatus.SUCCESS)
+        else:
+            branch.set_status(config, BranchStatus.FAILURE)
+    else:
+        print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
 
 
 def main(oak, config_file):
@@ -328,7 +388,7 @@ def main(oak, config_file):
     branches = clone_or_update(config)
 
     for b in branches:
-        run_oak(oak, b)
+        build_and_publish_status(config, oak, b)
 
 if __name__ == "__main__":
     usage = sys.argv[0] + " <oak> <config>"
