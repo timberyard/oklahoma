@@ -62,4 +62,4 @@ and mac build systems, or ci builders, security checkers, style checkers, etc.
 If ``publish_status`` is set to ``False``, the build status will not be pushed to GitHub.
 
 If ``skip_if_last_success`` is ``True``, a branch will not be build if the
-last reported build status was success.
+last reported build status for that branch was success.
