@@ -71,6 +71,23 @@ def check_exec(cmd, workdir):
 
     Will prompt to retry on failure.
     """
+    res = raw_exec(cmd, workdir)
+    if( res != 0 ):
+        print "\033[0;33m" + "Could not execute " + cmdstr + "\033[0;m"
+        print "\033[0;33m" + "Result: " + str(res) + "\033[0;m"
+        sys.stdout.write("\033[0;33m")
+        sys.stdout.flush()
+        sys.stdout.write("\033[0;m")
+        return False
+    else:
+        return True
+
+
+def raw_exec(cmd, workdir):
+    """
+    Execute cmd inside workdir.
+    Return the return value of cmd.
+    """
     cmdstr = " ".join(cmd)
     print "\033[0;33m" + "exec: " + cmdstr + "; workdir: " + workdir + "\033[0;m"
     sys.stdout.write("\033[0;34m")
@@ -81,15 +98,7 @@ def check_exec(cmd, workdir):
     os.chdir(oldcwd)
     sys.stdout.write("\033[0;m")
     sys.stdout.flush()
-    if( res != 0 ):
-        print "\033[0;33m" + "Could not execute " + cmdstr + "\033[0;m"
-        print "\033[0;33m" + "Result: " + str(res) + "\033[0;m"
-        sys.stdout.write("\033[0;33m")
-        sys.stdout.flush()
-        sys.stdout.write("\033[0;m")
-        return False
-    else:
-        return True
+    return res
 
 
 def get_entity_type(entity):
@@ -366,8 +375,9 @@ def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
     """
-    print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+    oak_status = -1
     if (branch.get_status(config) != BranchStatus.SUCCESS) or not config['skip_if_last_success']:
+        print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
         branch.set_status(config, BranchStatus.PENDING)
         # find json config
         build_conf = find_json_file(branch.source_dir)
@@ -385,17 +395,23 @@ def build_and_publish_status(config, oak, branch):
                     "-O", config['report_file'],
                 ])
             oak_args.append(build_conf)
-            build_success = check_exec(
+            oak_status = raw_exec(
                 oak_args,
                 '.'
             )
         else:
-            build_success = False
-        if build_success:
+            print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
+            return
+
+        if oak_status == 0:
+            print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
             branch.set_status(config, BranchStatus.SUCCESS)
-        else:
-            print "\033[0;31m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " failed." + "\033[0;m"
+        elif oak_status > 0 and oak_status < 200:
+            print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
             branch.set_status(config, BranchStatus.FAILURE)
+        else:
+            print "\033[0;33m" + "Error building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+            branch.set_status(config, BranchStatus.ERROR)
     else:
         print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
 
