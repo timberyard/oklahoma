@@ -163,15 +163,26 @@ def get_repo_branches(config, repo, pred=lambda x: True):
     return [branch for branch in combined if pred(branch)]
 
 
-def get_branch_path(repo, branch, modifier=""):
+def get_branch_base_path(repo, branch):
     """
     Return a path (properly encoded for the system environment) where the given
     branch of the given repo should go.
     """
-    if len(modifier) != 0:
-        modifier = "/" + modifier
-    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name'].replace("/","_") + modifier
+    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name'].replace("/","_")
 
+
+def get_branch_source_path(repo, branch):
+    """
+    Return the path where the branch source code should go.
+    """
+    return get_branch_base_path(repo, branch) + "/src"
+
+
+def get_branch_build_path(repo, branch):
+    """
+    Return the path where the branch should be built.
+    """
+    return get_branch_source_path(repo, branch) + "/builds/" + branch['commit']['author']['date'] + "_" + branch['commit']['sha']
 
 def get_repo_clone_url(config, repo):
     """
@@ -225,7 +236,7 @@ def clone_or_update(config):
         for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
-                path = config['output_dir'] + "/" + get_branch_path(repo, branch, "src")
+                path = config['output_dir'] + "/" + get_branch_source_path(repo, branch, "src")
                 if os.path.exists(path + "/.git"):
                     # already cloned, perform update
                     print "\033[0;32m" + "Repo at " + path + " already exists, updating." + "\033[0;m"
@@ -300,11 +311,7 @@ def clone_or_update(config):
                         print "\033[0;31m" + "Failed to clone repo " + repo['full_name'] + " branch " + branch['name'] + "\033[0;m"
                         continue
 
-                build_dir = config['output_dir'] + "/" + get_branch_path(repo, branch, "build")
-                if os.path.exists(build_dir):
-                    shutil.rmtree(build_dir)
-                os.makedirs(build_dir)
-                
+                build_dir = config['output_dir'] + "/" + get_branch_build_path(repo, branch, "build")
                 this_branch = Branch()
                 this_branch.update({
                     "source_dir": path,
