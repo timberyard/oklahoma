@@ -14,9 +14,11 @@ deactivate
 ```
 
 This application expects the following return values from ``ci-run``:
+```
 0 if build was successful
 1 if ci-run encountered an internal error
 2 if the build process failed due to build errors
+```
 
 The repos will be checked out into subdirectoreis of the current working dir.
 
