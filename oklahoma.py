@@ -316,62 +316,6 @@ def clone_or_update(config):
                 available_branches.append(this_branch)
     return available_branches
 
-
-def remove_orphans(config):
-    """
-    Find and delete repos that are checked-out locally but no longer exist on origin.
-    """
-    print "\033[0;32m" + "Finding orphans..." + "\033[0;m"
-    path = [config['output_dir']]
-    join_path = lambda path: "/".join(path)
-    for entitytype in ["org", "user"]:
-        path.append(entitytype + "s")
-        print "\033[0;34m" + "Checking entity type: " + entitytype + "\033[0;m"
-        for entity_name in os.listdir(join_path(path)):
-            path.append(entity_name)
-            print "\033[0;34m" + "Checking entity: " + join_path(path) + "\033[0;m"
-            
-            # check that entity exists and that type matches
-            matches = get_all_entities(config, lambda x: (x['login'] == entity_name) and (get_entity_type(x) == entitytype))
-            if len(matches) != 1:
-                print "\033[0;33m" + "Entity " + entity_name + " is orphan, deleting." + "\033[0;m"
-                shutil.rmtree(join_path(path))
-                path.pop()
-                continue
-
-            # check that each repo exists
-            entity = matches[0]
-            for repo_name in os.listdir(join_path(path)):
-                path.append(repo_name)
-                print "\033[0;34m" + "Checking repo: " + join_path(path) + "\033[0;m"
-                global_repo_filter = get_repo_filter(config)
-                our_repo_filter = lambda x: (x['full_name'] == entity_name + "/" + repo_name) and global_repo_filter(x)
-                matches = get_entity_repos(config, entity, our_repo_filter)
-                if len(matches) != 1:
-                    print "\033[0;33m" + "Repo " + repo_name + " is orphan, deleting." + "\033[0;m"
-                    shutil.rmtree(join_path(path))
-                    path.pop()
-                    continue
-                
-                # check that each branch exits
-                repo = matches[0]
-                for branch_name in os.listdir(join_path(path)):
-                    path.append(branch_name)
-                    print "\033[0;34m" + "Checking branch: " + join_path(path) + "\033[0;m"
-                    branch_filter = lambda x: config['output_dir'] + "/" + get_branch_path(repo, x) == join_path(path)
-                    matches = get_repo_branches(config, repo, branch_filter)
-                    if len(matches) != 1:
-                        print "\033[0;33m" + "Branch " + branch_name + " is orphan, deleting" + "\033[0;m"
-                        shutil.rmtree(join_path(path))
-                        path.pop()
-                        continue
-
-                    path.pop() # pop branch name
-                path.pop() # pop repo name
-            path.pop() # pop entity name
-        path.pop() # pop entity type
-
-
 def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
@@ -430,7 +374,6 @@ def main(oak, config_file):
     if not os.path.exists(out_dir + "/users/"):
         os.makedirs(out_dir + "/users/")
 
-    remove_orphans(config)
     branches = clone_or_update(config)
 
     for b in branches:
