@@ -297,6 +297,7 @@ def clone_or_update(config):
                     )
                     if not clone_success:
                         # TODO report this repo as failed
+                        print "\033[0;31m" + "Failed to clone repo " + repo['full_name'] + " branch " + branch['name'] + "\033[0;m"
                         continue
 
                 build_dir = config['output_dir'] + "/" + get_branch_path(repo, branch, "build")
