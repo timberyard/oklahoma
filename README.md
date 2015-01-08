@@ -29,6 +29,7 @@ whitelist_repos:
     - foo/bar
 output_dir: ./repos
 reporting_context: ci_linux
+publish_status: !!bool False
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -49,3 +50,6 @@ The reporting context is used to scope the build status. For example,
 you could differentiate between statuses reported by linux, windows,
 and mac build systems, or ci builders, security checkers, style checkers, etc.
 
+### Publish Status
+
+If publish_status is set to false, the build status will not be pushed to GitHub

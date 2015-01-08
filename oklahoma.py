@@ -50,6 +50,8 @@ class Branch(object):
         return BranchStatus.ERROR
 
     def set_status(self, config, status):
+        if not config['publish_status']:
+            return
         r = requests.post(
             config['server'] + "/api/v3/repos/" + self.repo_name + "/statuses/" + self.commit_sha,
             params={"access_token": config['token']},
