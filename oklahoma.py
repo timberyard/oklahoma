@@ -406,11 +406,14 @@ def build_and_publish_status(config, oak, branch):
         if oak_status == 0:
             print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
             branch.set_status(config, BranchStatus.SUCCESS)
-        elif oak_status > 0 and oak_status < 200:
+        elif oak_status == 1:
+            print "\033[0;33m" + "Error with build tool while building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+            branch.set_status(config, BranchStatus.ERROR)
+        elif oak_status == 2:
             print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
             branch.set_status(config, BranchStatus.FAILURE)
         else:
-            print "\033[0;33m" + "Error building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+            print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
             branch.set_status(config, BranchStatus.ERROR)
     else:
         print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
