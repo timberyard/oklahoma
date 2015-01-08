@@ -28,6 +28,7 @@ blacklist_repos:
 whitelist_repos:
     - foo/bar
 output_dir: ./repos
+reporting_context: ci_linux
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -41,3 +42,10 @@ Full names (IE username/repo_name) must be used.
 If the whitelist is not empty, the blacklist is ignored.
 
 Both lists must be given in the config but may be empty.
+
+### Reporting Context
+
+The reporting context is used to scope the build status. For example,
+you could differentiate between statuses reported by linux, windows,
+and mac build systems, or ci builders, security checkers, style checkers, etc.
+
