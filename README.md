@@ -63,3 +63,6 @@ If ``publish_status`` is set to ``False``, the build status will not be pushed t
 
 If ``skip_if_last_success`` is ``True``, a branch will not be build if the
 last reported build status for that branch was success.
+
+If ``report_file`` is set, a report will be generated in the build directory
+with the given file name.

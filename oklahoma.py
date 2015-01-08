@@ -207,7 +207,7 @@ def find_json_file(path):
     files = os.listdir(path)
     files.sort()
     for f in files:
-        if f.endswith(".json"):
+        if f == "ci.json":
             return path + "/" + f
     return None
 
@@ -393,7 +393,7 @@ def build_and_publish_status(config, oak, branch):
             ]
             if 'report_file' in config:
                 oak_args.extend([
-                    "-O", config['report_file'],
+                    "-O", os.path.abspath(branch.build_dir) + "/" + config['report_file']
                 ])
             oak_args.append(build_conf)
             oak_status = raw_exec(
