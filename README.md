@@ -30,6 +30,7 @@ whitelist_repos:
 output_dir: ./repos
 reporting_context: ci_linux
 publish_status: !!bool False
+skip_if_last_success: !!bool True
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -44,12 +45,13 @@ If the whitelist is not empty, the blacklist is ignored.
 
 Both lists must be given in the config but may be empty.
 
-### Reporting Context
+### Reporting
 
-The reporting context is used to scope the build status. For example,
+The ``reporting_context`` is used to scope the build status. For example,
 you could differentiate between statuses reported by linux, windows,
 and mac build systems, or ci builders, security checkers, style checkers, etc.
 
-### Publish Status
+If ``publish_status`` is set to ``False``, the build status will not be pushed to GitHub.
 
-If publish_status is set to false, the build status will not be pushed to GitHub
+If ``skip_if_last_success`` is ``True``, a branch will not be build if the
+last reported build status was success.

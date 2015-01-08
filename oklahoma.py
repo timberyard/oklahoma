@@ -367,7 +367,7 @@ def build_and_publish_status(config, oak, branch):
     Call oak with the given parameters.
     """
     print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-    if branch.get_status(config) != BranchStatus.SUCCESS:
+    if (branch.get_status(config) != BranchStatus.SUCCESS) or not config['skip_if_last_success']:
         branch.set_status(config, BranchStatus.PENDING)
         # find json config
         build_conf = find_json_file(branch.source_dir)
