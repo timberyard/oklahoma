@@ -189,6 +189,18 @@ def get_repo_filter(config):
     return repo_filter
 
 
+def find_json_file(path):
+    """
+    Find the first .json file in the given path.
+    """
+    files = os.listdir(path)
+    files.sort()
+    for f in files:
+        if f.endswith(".json"):
+            return f
+    return None
+
+
 def clone_or_update(config):
     """
     Clone (or otherwise update) each repo, restoring it to a fresh state.
@@ -355,20 +367,27 @@ def build_and_publish_status(config, oak, branch):
     print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
     if branch.get_status(config) != BranchStatus.SUCCESS:
         branch.set_status(config, BranchStatus.PENDING)
-        build_success = check_exec(
-            [
-                oak,
-                "-i", branch.source_dir,
-                "-o", branch.build_dir,
-                "-r", branch.repo_name,
-                "-b", branch.branch_name,
-                "-c", branch.commit_sha,
-            ],
-            '.'
-        )
+        # find json config
+        build_conf = find_json_file(branch.source_dir)
+        if build_conf:
+            build_success = check_exec(
+                [
+                    oak,
+                    "-i", branch.source_dir,
+                    "-o", branch.build_dir,
+                    "-r", branch.repo_name,
+                    "-b", branch.branch_name,
+                    "-c", branch.commit_sha,
+                    build_conf
+                ],
+                '.'
+            )
+        else:
+            build_success = False
         if build_success:
             branch.set_status(config, BranchStatus.SUCCESS)
         else:
+            print "\033[0;31m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " failed." + "\033[0;m"
             branch.set_status(config, BranchStatus.FAILURE)
     else:
         print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
