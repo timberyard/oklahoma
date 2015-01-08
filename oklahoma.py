@@ -50,6 +50,8 @@ class Branch(object):
         return BranchStatus.ERROR
 
     def set_status(self, config, status):
+        if not config['publish_status']:
+            return
         r = requests.post(
             config['server'] + "/api/v3/repos/" + self.repo_name + "/statuses/" + self.commit_sha,
             params={"access_token": config['token']},
@@ -187,6 +189,18 @@ def get_repo_filter(config):
         else:
             return repo['full_name'] not in blacklist
     return repo_filter
+
+
+def find_json_file(path):
+    """
+    Find the first .json file in the given path.
+    """
+    files = os.listdir(path)
+    files.sort()
+    for f in files:
+        if f.endswith(".json"):
+            return path + "/" + f
+    return None
 
 
 def clone_or_update(config):
@@ -353,22 +367,34 @@ def build_and_publish_status(config, oak, branch):
     Call oak with the given parameters.
     """
     print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-    if branch.get_status(config) != BranchStatus.SUCCESS:
+    if (branch.get_status(config) != BranchStatus.SUCCESS) or not config['skip_if_last_success']:
         branch.set_status(config, BranchStatus.PENDING)
-        build_success = check_exec(
-            [
+        # find json config
+        build_conf = find_json_file(branch.source_dir)
+        if build_conf:
+            oak_args = [
                 oak,
-                "-i", branch.source_dir,
-                "-o", branch.build_dir,
+                "-i", os.path.abspath(branch.source_dir),
+                "-o", os.path.abspath(branch.build_dir),
                 "-r", branch.repo_name,
                 "-b", branch.branch_name,
                 "-c", branch.commit_sha,
-            ],
-            '.'
-        )
+            ]
+            if 'report_file' in config:
+                oak_args.extend([
+                    "-O", config['report_file'],
+                ])
+            oak_args.append(build_conf)
+            build_success = check_exec(
+                oak_args,
+                '.'
+            )
+        else:
+            build_success = False
         if build_success:
             branch.set_status(config, BranchStatus.SUCCESS)
         else:
+            print "\033[0;31m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " failed." + "\033[0;m"
             branch.set_status(config, BranchStatus.FAILURE)
     else:
         print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
