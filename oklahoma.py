@@ -9,6 +9,9 @@ import sys
 import yaml
 
 
+VERSION = "0.1.0"
+
+
 class BranchStatus(object):
     PENDING = "pending"
     SUCCESS = "success"
