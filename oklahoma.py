@@ -389,7 +389,7 @@ def build_and_publish_status(config, oak, branch):
     Unlock the branch when finished.
     """
     if os.path.exists(branch.build_dir) and not config['force_rebuild']:
-        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "already exists. Skipping." + "\033[0;m"
+        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + " already exists. Skipping." + "\033[0;m"
         unlock_branch(branch.lock)
         return
     else:
