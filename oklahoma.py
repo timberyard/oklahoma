@@ -163,15 +163,38 @@ def get_repo_branches(config, repo, pred=lambda x: True):
     return [branch for branch in combined if pred(branch)]
 
 
-def get_branch_path(repo, branch, modifier=""):
+def get_branch_base_path(repo, branch):
     """
     Return a path (properly encoded for the system environment) where the given
     branch of the given repo should go.
     """
-    if len(modifier) != 0:
-        modifier = "/" + modifier
-    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name'].replace("/","_") + modifier
+    return get_entity_type(repo['owner']) + "s/" + repo['full_name'] + "/" + branch['name'].replace("/","_")
 
+
+def get_branch_source_path(repo, branch):
+    """
+    Return the path where the branch source code should go.
+    """
+    return get_branch_base_path(repo, branch) + "/src"
+
+
+def get_branch_build_path(config, repo, branch):
+    """
+    Return the path where the branch should be built.
+    """
+    # get detailed commit info
+    commit = requests.get(
+        config['server'] + "/api/v3/repos/" + repo['full_name'] + "/git/commits/" + branch['commit']['sha'],
+        params={"access_token": config['token']},
+        verify=config['ca']
+    )
+    commit.raise_for_status()
+    commit = commit.json()
+    sha = commit['sha']
+    timestamp = commit['author']['date']
+    # some parts of the build can't handle colons in the path, apparently
+    timestamp = timestamp.replace(":", "-")
+    return get_branch_base_path(repo, branch) + "/builds/" + timestamp + "_" + sha
 
 def get_repo_clone_url(config, repo):
     """
@@ -225,7 +248,7 @@ def clone_or_update(config):
         for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
-                path = config['output_dir'] + "/" + get_branch_path(repo, branch, "src")
+                path = config['output_dir'] + "/" + get_branch_source_path(repo, branch)
                 if os.path.exists(path + "/.git"):
                     # already cloned, perform update
                     print "\033[0;32m" + "Repo at " + path + " already exists, updating." + "\033[0;m"
@@ -296,15 +319,10 @@ def clone_or_update(config):
                         '.'
                     )
                     if not clone_success:
-                        # TODO report this repo as failed
                         print "\033[0;31m" + "Failed to clone repo " + repo['full_name'] + " branch " + branch['name'] + "\033[0;m"
                         continue
 
-                build_dir = config['output_dir'] + "/" + get_branch_path(repo, branch, "build")
-                if os.path.exists(build_dir):
-                    shutil.rmtree(build_dir)
-                os.makedirs(build_dir)
-                
+                build_dir = config['output_dir'] + "/" + get_branch_build_path(config, repo, branch)
                 this_branch = Branch()
                 this_branch.update({
                     "source_dir": path,
@@ -316,73 +334,27 @@ def clone_or_update(config):
                 available_branches.append(this_branch)
     return available_branches
 
-
-def remove_orphans(config):
-    """
-    Find and delete repos that are checked-out locally but no longer exist on origin.
-    """
-    print "\033[0;32m" + "Finding orphans..." + "\033[0;m"
-    path = [config['output_dir']]
-    join_path = lambda path: "/".join(path)
-    for entitytype in ["org", "user"]:
-        path.append(entitytype + "s")
-        print "\033[0;34m" + "Checking entity type: " + entitytype + "\033[0;m"
-        for entity_name in os.listdir(join_path(path)):
-            path.append(entity_name)
-            print "\033[0;34m" + "Checking entity: " + join_path(path) + "\033[0;m"
-            
-            # check that entity exists and that type matches
-            matches = get_all_entities(config, lambda x: (x['login'] == entity_name) and (get_entity_type(x) == entitytype))
-            if len(matches) != 1:
-                print "\033[0;33m" + "Entity " + entity_name + " is orphan, deleting." + "\033[0;m"
-                shutil.rmtree(join_path(path))
-                path.pop()
-                continue
-
-            # check that each repo exists
-            entity = matches[0]
-            for repo_name in os.listdir(join_path(path)):
-                path.append(repo_name)
-                print "\033[0;34m" + "Checking repo: " + join_path(path) + "\033[0;m"
-                global_repo_filter = get_repo_filter(config)
-                our_repo_filter = lambda x: (x['full_name'] == entity_name + "/" + repo_name) and global_repo_filter(x)
-                matches = get_entity_repos(config, entity, our_repo_filter)
-                if len(matches) != 1:
-                    print "\033[0;33m" + "Repo " + repo_name + " is orphan, deleting." + "\033[0;m"
-                    shutil.rmtree(join_path(path))
-                    path.pop()
-                    continue
-                
-                # check that each branch exits
-                repo = matches[0]
-                for branch_name in os.listdir(join_path(path)):
-                    path.append(branch_name)
-                    print "\033[0;34m" + "Checking branch: " + join_path(path) + "\033[0;m"
-                    branch_filter = lambda x: config['output_dir'] + "/" + get_branch_path(repo, x) == join_path(path)
-                    matches = get_repo_branches(config, repo, branch_filter)
-                    if len(matches) != 1:
-                        print "\033[0;33m" + "Branch " + branch_name + " is orphan, deleting" + "\033[0;m"
-                        shutil.rmtree(join_path(path))
-                        path.pop()
-                        continue
-
-                    path.pop() # pop branch name
-                path.pop() # pop repo name
-            path.pop() # pop entity name
-        path.pop() # pop entity type
-
-
 def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
     """
-    oak_status = -1
-    if (branch.get_status(config) != BranchStatus.SUCCESS) or not config['skip_if_last_success']:
-        print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-        branch.set_status(config, BranchStatus.PENDING)
+    if os.path.exists(branch.build_dir) and not config['force_rebuild']:
+        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "already exists. Skipping." + "\033[0;m"
+        return
+    else:
+        print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "\033[0;m"
         # find json config
         build_conf = find_json_file(branch.source_dir)
-        if build_conf:
+        if build_conf is None:
+            print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
+            return
+        else:
+            # if we get here we're forceing the rebuild, so throw away the old build
+            if os.path.exists(branch.build_dir):
+                shutil.rmtree(branch.build_dir)
+            os.makedirs(branch.build_dir)
+            oak_status = -1
+            branch.set_status(config, BranchStatus.PENDING)
             oak_args = [
                 oak,
                 "-i", os.path.abspath(branch.source_dir),
@@ -400,24 +372,20 @@ def build_and_publish_status(config, oak, branch):
                 oak_args,
                 '.'
             )
-        else:
-            print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
-            return
-
-        if oak_status == 0:
-            print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.SUCCESS)
-        elif oak_status == 1:
-            print "\033[0;33m" + "Error with build tool while building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.ERROR)
-        elif oak_status == 2:
-            print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
-            branch.set_status(config, BranchStatus.FAILURE)
-        else:
-            print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
-            branch.set_status(config, BranchStatus.ERROR)
-    else:
-        print "\033[0;32m" + "Status of repo " + branch.repo_name + " branch " + branch.branch_name + " is already Success. Skipping." + "\033[0;m"
+            if oak_status == 0:
+                print "\033[0;32m" + "Successfully built repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.SUCCESS)
+            elif oak_status == 1:
+                print "\033[0;33m" + "Error with build tool while building repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.ERROR)
+                shutil.rmtree(branch.build_dir)
+            elif oak_status == 2:
+                print "\033[0;31m" + "Failed to build repo " + branch.repo_name + " branch " + branch.branch_name + "\033[0;m"
+                branch.set_status(config, BranchStatus.FAILURE)
+            else:
+                print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
+                branch.set_status(config, BranchStatus.ERROR)
+                shutil.rmtree(branch.build_dir)
 
 
 def main(oak, config_file):
@@ -430,7 +398,6 @@ def main(oak, config_file):
     if not os.path.exists(out_dir + "/users/"):
         os.makedirs(out_dir + "/users/")
 
-    remove_orphans(config)
     branches = clone_or_update(config)
 
     for b in branches:
