@@ -66,3 +66,12 @@ there is already a build present for this branch. The old build will be discarde
 
 If ``report_file`` is set, a report will be generated in the build directory
 with the given file name.
+
+### Parallel Oklahoma Processes
+
+Oklahoma can be run in parallel. Branches are locked before clone/update
+and are only unlocked after a build is complete. If a parallel oklahoma
+process is running, it will skip any locked branches.
+
+Locking is done using [LockFile](https://pypi.python.org/pypi/lockfile).
+
