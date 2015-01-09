@@ -39,6 +39,7 @@ report_file: report.html
 reporting_context: ci_linux
 publish_status: !!bool False
 force_rebuild: !!bool False
+toolchain: clang
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -75,3 +76,7 @@ process is running, it will skip any locked branches.
 
 Locking is done using [LockFile](https://pypi.python.org/pypi/lockfile).
 
+### Toolchain
+
+The toolchain config parameter is required. It is passed along to oak.
+See the oak documentation for valid toolchains.

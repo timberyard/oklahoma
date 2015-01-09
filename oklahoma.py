@@ -414,6 +414,7 @@ def build_and_publish_status(config, oak, branch):
                 "-r", branch.repo_name,
                 "-b", branch.branch_name,
                 "-c", branch.commit_sha,
+                "--toolchain", config['toolchain'],
             ]
             if 'report_file' in config:
                 oak_args.extend([
