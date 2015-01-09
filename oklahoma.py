@@ -202,7 +202,7 @@ def get_branch_build_path(config, repo, branch):
     timestamp = commit['author']['date']
     # some parts of the build can't handle colons in the path, apparently
     timestamp = timestamp.replace(":", "-")
-    return get_branch_base_path(repo, branch) + "/builds/" + timestamp + "_" + sha
+    return get_branch_base_path(repo, branch) + "/builds/" + timestamp + "_" + sha[:7]
 
 def get_repo_clone_url(config, repo):
     """
