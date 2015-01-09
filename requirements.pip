@@ -1,2 +1,3 @@
 pyyaml
 requests
+lockfile==0.10.2

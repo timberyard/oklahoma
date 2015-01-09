@@ -20,7 +20,7 @@ This application expects the following return values from ``ci-run``:
 2 if the build process failed due to build errors
 ```
 
-The repos will be checked out into subdirectoreis of the current working dir.
+The repos will be checked out into the output directory specified in the config.
 
 ### $PWD/config.yaml
 
@@ -35,10 +35,11 @@ blacklist_repos:
 whitelist_repos:
     - foo/bar
 output_dir: ./repos
-report_file: ./report.html
+report_file: report.html
 reporting_context: ci_linux
 publish_status: !!bool False
 force_rebuild: !!bool False
+toolchain: clang
 ```
 
 Access tokens can be generated in your GitHub account settings
@@ -66,3 +67,16 @@ there is already a build present for this branch. The old build will be discarde
 
 If ``report_file`` is set, a report will be generated in the build directory
 with the given file name.
+
+### Parallel Oklahoma Processes
+
+Oklahoma can be run in parallel. Branches are locked before clone/update
+and are only unlocked after a build is complete. If a parallel oklahoma
+process is running, it will skip any locked branches.
+
+Locking is done using [LockFile](https://pypi.python.org/pypi/lockfile).
+
+### Toolchain
+
+The toolchain config parameter is required. It is passed along to oak.
+See the oak documentation for valid toolchains.

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import json
+import lockfile
 import os
 import requests
 import shutil
@@ -9,7 +10,11 @@ import sys
 import yaml
 
 
-VERSION = "0.1.0"
+# program version
+VERSION = "1.0.0"
+
+# constants
+MUTEX_FILE = "mutex"
 
 
 class BranchStatus(object):
@@ -238,10 +243,44 @@ def find_json_file(path):
     return None
 
 
+def try_lock_branch(config, repo, branch):
+    """
+    Try to lock the given branch.
+    Rerturn None if the lock cannot be aquired, or a LockFile object that
+    has the lock.
+    """
+    branch_lock_path = config['output_dir'] + "/" + get_branch_base_path(repo, branch)
+    branch_lock_mutex = branch_lock_path + "/" + MUTEX_FILE
+    # make sure mutex file exists
+    if not os.path.exists(branch_lock_path):
+        os.makedirs(branch_lock_path)
+    if not os.path.isfile(branch_lock_mutex):
+        open(branch_lock_mutex, 'a').close()
+        
+    lock = lockfile.LockFile(branch_lock_mutex)
+    try:
+        # negative timeout will raise AlreayLocked
+        lock.acquire(timeout=-1)
+        return lock
+    except:
+        return None
+
+
+def unlock_branch(lock):
+    """
+    Unlock the given branch. If the branch is not locked, this method does nothing.
+    """
+    try:
+        lock.release()
+    # all other exceptions are bad
+    except NotLocked:
+        pass
+
+
 def clone_or_update(config):
     """
     Clone (or otherwise update) each repo, restoring it to a fresh state.
-
+    Lock branch directory.
     Return a list of Branch objects.
     """
     available_branches = []
@@ -251,6 +290,12 @@ def clone_or_update(config):
         for repo in get_entity_repos(config, entity, get_repo_filter(config)):
             for branch in get_repo_branches(config, repo):
                 print "\033[0;32m" + entitytype + ": " + entity['login'] + "; repo: " + repo['full_name'] + "; branch: " + branch['name'] + "\033[0;m"
+
+                branch_lock = try_lock_branch(config, repo, branch)
+                if branch_lock is None:
+                    print "\033[0;31m" + "Skipping locked repo " + repo['full_name'] + " branch " + branch['name'] + "\033[0;m"
+                    continue
+
                 path = config['output_dir'] + "/" + get_branch_source_path(repo, branch)
                 if os.path.exists(path + "/.git"):
                     # already cloned, perform update
@@ -333,6 +378,7 @@ def clone_or_update(config):
                     "repo_name": repo['full_name'],
                     "branch_name": branch['name'],
                     "commit_sha": branch['commit']['sha'],
+                    "lock": branch_lock,
                 })
                 available_branches.append(this_branch)
     return available_branches
@@ -340,9 +386,11 @@ def clone_or_update(config):
 def build_and_publish_status(config, oak, branch):
     """
     Call oak with the given parameters.
+    Unlock the branch when finished.
     """
     if os.path.exists(branch.build_dir) and not config['force_rebuild']:
-        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "already exists. Skipping." + "\033[0;m"
+        print "\033[0;32m" + "Build for repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + " already exists. Skipping." + "\033[0;m"
+        unlock_branch(branch.lock)
         return
     else:
         print "\033[0;32m" + "Building repo " + branch.repo_name + " branch " + branch.branch_name + " commit " + branch.commit_sha + "\033[0;m"
@@ -350,6 +398,7 @@ def build_and_publish_status(config, oak, branch):
         build_conf = find_json_file(branch.source_dir)
         if build_conf is None:
             print "\033[0;34m" + "No config for repo " + branch.repo_name + " branch " + branch.branch_name + ". Skipping." + "\033[0;m"
+            unlock_branch(branch.lock)
             return
         else:
             # if we get here we're forceing the rebuild, so throw away the old build
@@ -365,6 +414,7 @@ def build_and_publish_status(config, oak, branch):
                 "-r", branch.repo_name,
                 "-b", branch.branch_name,
                 "-c", branch.commit_sha,
+                "--toolchain", config['toolchain'],
             ]
             if 'report_file' in config:
                 oak_args.extend([
@@ -389,6 +439,7 @@ def build_and_publish_status(config, oak, branch):
                 print "\033[0;31m" + "Build tool returned with invalid value: " + str(oak_status) + "\033[0;m"
                 branch.set_status(config, BranchStatus.ERROR)
                 shutil.rmtree(branch.build_dir)
+    unlock_branch(branch.lock)
 
 
 def main(oak, config_file):
